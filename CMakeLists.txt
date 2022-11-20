@@ -34,5 +34,6 @@ add_subdirectory(libsgp4)
 add_subdirectory(sattrack)
 add_subdirectory(runtest)
 add_subdirectory(passpredict)
+add_subdirectory(passpredict-sun)
 
 file(COPY SGP4-VER.TLE DESTINATION ${PROJECT_BINARY_DIR})
