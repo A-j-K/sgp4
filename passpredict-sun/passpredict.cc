@@ -33,7 +33,60 @@ struct PassDetails
     double max_elevation;
     double sunpos_azm_rads;
     double sunpos_alt_rads;
+    bool isLit;
 };
+
+/*
+ * Satellite visibility is based on:-
+ * see : Visually Observing Earth Satellites By Dr. T.S. Kelso
+ * at  :  https://celestrak.org/columns/v03n01/
+ */
+static
+bool isVisible(
+	const libsgp4::Eci& sat, 
+	const libsgp4::Eci& sun)
+{
+    using std::abs;
+    using std::pow;
+    using std::asin;
+    using std::acos;
+    using std::sqrt;
+
+    bool rval = true;
+    libsgp4::Vector satvec = sat.Position();
+    libsgp4::Vector sunvec = sun.Position();
+    
+    double psun = sqrt(
+		      pow(satvec.x - sunvec.x, 2) + 
+		      pow(satvec.y - sunvec.y, 2) + 
+		      pow(satvec.z - sunvec.z, 2) 
+		  );
+    double pearth = sqrt(
+		        pow(satvec.x, 2) + 
+   		        pow(satvec.y, 2) + 
+		        pow(satvec.z, 2)
+		    );
+    double theta_e = asin((12742. / 2.) / pearth);
+    double theta_s = asin((1391000. / 2.) / psun);
+    double dotproduct_peps = 
+	    	abs(
+			(satvec.x * sunvec.x) + 
+			(satvec.y * sunvec.y) + 
+			(satvec.z * sunvec.z)
+		);
+    double theta = acos(dotproduct_peps / (psun * pearth));
+    if(theta_e > theta_s && theta < (theta_e - theta_s)) {
+        rval = false; // Satellite is not lit
+    }
+    else if(abs(theta_e - theta_s) < theta && theta < (theta_e + theta_s)) {
+        rval = true; // Satellite is penumbral  
+    }
+    else if (theta_s > theta_e && theta < (theta_s - theta_e)) {
+        rval = true; // Satellite is eclipsed
+    }
+
+    return rval;
+}
 
 double FindMaxElevation(
         const libsgp4::CoordGeodetic& user_geo,
@@ -215,6 +268,7 @@ std::list<struct PassDetails> GeneratePassList(
         const int time_step)
 {
     std::list<struct PassDetails> pass_list;
+    libsgp4::SolarPosition sp;
 
     libsgp4::Observer obs(user_geo);
 
@@ -229,12 +283,20 @@ std::list<struct PassDetails> GeneratePassList(
     while (current_time < end_time)
     {
         bool end_of_pass = false;
+        bool lit_at_least_once = false;
 
         /*
          * calculate satellite position
          */
         libsgp4::Eci eci = sgp4.FindPosition(current_time);
         libsgp4::CoordTopocentric topo = obs.GetLookAngle(eci);
+        libsgp4::Eci sunpos = sp.FindPosition(current_time);
+	if(!lit_at_least_once) {
+	    if(isVisible(eci, sunpos)) {
+	        lit_at_least_once = true;
+	    }
+	}
+
 
         if (!found_aos && topo.elevation > 0.0)
         {
@@ -291,11 +353,13 @@ std::list<struct PassDetails> GeneratePassList(
                     aos_time,
                     los_time);
 
-	    libsgp4::SolarPosition sp;
-	    libsgp4::Eci sunpos = sp.FindPosition(current_time);
+	    /*
+    	     * calculate sun position
+             */
 	    libsgp4::CoordTopocentric suntopo = obs.GetLookAngle(sunpos);
 	    pd.sunpos_azm_rads = suntopo.azimuth;
 	    pd.sunpos_alt_rads = suntopo.elevation;
+	    pd.isLit = lit_at_least_once;
 
             pass_list.push_back(pd);
         }
@@ -339,6 +403,9 @@ std::list<struct PassDetails> GeneratePassList(
         pd.aos = aos_time;
         pd.los = end_time;
         pd.max_elevation = FindMaxElevation(user_geo, sgp4, aos_time, end_time);
+	pd.sunpos_azm_rads = 0.0;
+	pd.sunpos_alt_rads = 0.0;
+	pd.isLit = false;
         pass_list.push_back(pd);
     }
 
@@ -357,10 +424,11 @@ int main()
     std::cout << tle << std::endl;
 
     /*
-     * generate 7 day schedule
+     * generate "days" schedule
      */
+    double days = 3.0;
     libsgp4::DateTime start_date = libsgp4::DateTime::Now(true);
-    libsgp4::DateTime end_date(start_date.AddDays(7.0));
+    libsgp4::DateTime end_date(start_date.AddDays(days));
 
     std::list<struct PassDetails> pass_list;
 
@@ -385,7 +453,8 @@ int main()
         std::list<struct PassDetails>::const_iterator itr = pass_list.begin();
         do
         {
-            ss  << "AOS: " << itr->aos
+            ss  << "Lit: " << (itr->isLit ? "yes " : "no ")
+		<< "AOS: " << itr->aos
                 << ", LOS: " << itr->los
                 << ", Max El: " << std::setw(4) << libsgp4::Util::RadiansToDegrees(itr->max_elevation)
 		<< ", Sun Alt/Az: " << std::setw(1) << libsgp4::Util::RadiansToDegrees(itr->sunpos_alt_rads)
