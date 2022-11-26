@@ -14,13 +14,22 @@
  * limitations under the License.
  */
 
-
+#if 0
 #include <Observer.h>
 #include <SGP4.h>
 #include <Util.h>
 #include <CoordTopocentric.h>
 #include <CoordGeodetic.h>
 #include <SolarPosition.h>
+#else
+#include <Observer.h>
+#include <SGP4.h>
+#include <Util.h>
+#include <CoordTopocentric.h>
+#include <SolarPosition.h>
+#endif
+
+#include "daily.h"
 
 #include <cmath>
 #include <iostream>
@@ -328,15 +337,37 @@ build_list(const libsgp4::CoordGeodetic& geo,
 	return slist;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+    libsgp4::Tle *ptle; 
+    std::string l0, l1, l2;
     std::stringstream oss;
     libsgp4::CoordGeodetic geo(56.21, -3.0026, 0.05);
-    libsgp4::Tle tle("BLUEWALKER3",
-        "1 53807U 22111AL  22324.21613640  .00001955  00000-0  10857-3 0  9990",
-        "2 53807  53.2014 307.5499 0014123 131.7034 228.5173 15.18600551 10671"
-	);
-    libsgp4::SGP4 sgp4(tle);
+    //libsgp4::Tle tle("BLUEWALKER3",
+    //   "1 53807U 22111AL  22324.21613640  .00001955  00000-0  10857-3 0  9990",
+    //    "2 53807  53.2014 307.5499 0014123 131.7034 228.5173 15.18600551 10671"
+    //	);
+
+    if(argc == 1) {
+    	geo = libsgp4::CoordGeodetic(56.21, -3.0026, 0.05);
+	l0 = "BLUEWALKER3";
+	l1 = "1 53807U 22111AL  22324.21613640  .00001955  00000-0  10857-3 0  9990";
+	l2 = "2 53807  53.2014 307.5499 0014123 131.7034 228.5173 15.18600551 10671";
+	ptle = new libsgp4::Tle(l0, l1, l2);
+    }
+    else {
+	ptle = new libsgp4::Tle("BLUEWALKER3",
+		"1 53807U 22111AL  22324.21613640  .00001955  00000-0  10857-3 0  9990",
+		"2 53807  53.2014 307.5499 0014123 131.7034 228.5173 15.18600551 10671"
+		);
+    }
+
+    if(!ptle) {
+	std::cerr << "Failed to create TLE object" << std::endl;
+	return -1;
+    }
+
+    libsgp4::SGP4 sgp4(*ptle);
 
     //std::cout << tle << std::endl;
 
@@ -368,5 +399,6 @@ int main()
 	std::cout << "Found in total: " << slist.size() << std::endl;
     }
     
+    delete ptle;
     return 0;
 }
